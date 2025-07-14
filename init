@@ -1,0 +1,218 @@
+#!/bin/bash
+
+ALLOWED_DISTROS="ubuntu"
+ALLOWED_VERSIONS="18.04 20.04 22.04 24.04"
+DEPS="openssl curl wireguard-tools sed expect"
+
+DOCKER_CMD="docker"
+
+if command -v docker-compose > /dev/null 2>&1; then
+    DOCKER_COMPOSE_CMD="docker-compose"
+else
+    DOCKER_COMPOSE_CMD="docker compose"
+fi
+
+
+function Banner()
+{
+    echo "-----------------------------------------------------------------------------"
+    echo " ________ __                                       __                        "
+    echo "|  |  |  |__|.----.-----.-----.--.--.---.-.----.--|  |                       "
+    echo "|  |  |  |  ||   _|  -__|  _  |  |  |  _  |   _|  _  |                       "
+    echo "|________|__||__| |_____|___  |_____|___._|__| |_____|                       "
+    echo "                        |_____|                                              "
+    echo "             __,-,__      _______                     ___ ___ ______ _______ "
+    echo "            |  ' '__|    |       |.-----.-----.-----.|   |   |   __ \    |  |"
+    echo "            |     __|    |   -   ||  _  |  -__|     ||   |   |    __/       |"
+    echo "            |_______|    |_______||   __|_____|__|__| \_____/|___|  |__|____|"
+    echo "               |_|                |__|                                       "
+    echo ""
+    echo "Welcome to WireGuard & OpenVPN Setup by SSHPANEL."
+    echo "-----------------------------------------------------------------------------"
+}
+
+
+function CheckRootUser() {
+    if [[ $EUID -ne 0 ]]; then
+        echo "❌ Error: This script must be run as root"
+        exit 1
+    fi
+
+
+}
+
+function InstallDependencies() {
+    apt-get update
+    apt-get install -y $DEPS
+
+    curl -4 -H "Content-Type: application/json" -X  GET $SSHPANEL_UPDATE -d '{"status": "INSTALLING DEPENDENCIES", "percentage": "30"}'
+
+}
+
+function CheckDistroVersion() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        DISTRO=$ID
+        VERSION=$VERSION_ID
+    elif command -v lsb_release >/dev/null 2>&1; then
+        DISTRO=$(lsb_release -si | tr '[:upper:]' '[:lower:]')
+        VERSION=$(lsb_release -sr)
+    else
+        echo "❌ Error: VPS unsupported."
+        exit 1
+    fi
+    
+    if [[ ! " $ALLOWED_DISTROS " =~ " $DISTRO " ]]; then
+        echo "❌ Error: Unsupported distribution: $DISTRO"
+        echo "   Supported distributions: $ALLOWED_DISTROS"
+        exit 1
+    fi
+    
+    if [[ ! " $ALLOWED_VERSIONS " =~ " $VERSION " ]]; then
+        echo "❌ Error: Unsupported version: $VERSION"
+        echo "   Supported versions: $ALLOWED_VERSIONS"
+        exit 1
+    fi
+    
+    echo "✅ Distribution check passed: $DISTRO $VERSION"
+
+
+    curl -4 -H "Content-Type: application/json" -X  GET $SSHPANEL_UPDATE -d '{"status": "CHECKING DISTRIBUTION", "percentage": "40"}'
+}
+
+function CheckAndInstallDocker() {
+    if ! command -v $DOCKER_CMD &> /dev/null; then
+        echo "Installing Docker..."
+        curl -sSL https://get.docker.com | sh
+    fi
+
+    echo "✅ Docker installed"
+}
+
+function ConfigureOpenvpn() {
+    cd openvpn
+
+
+    curl -4 -H "Content-Type: application/json" -X  GET $SSHPANEL_UPDATE -d '{"status": "CONFIGURING OPENVPN", "percentage": "50"}'
+
+    sh -c "$DOCKER_COMPOSE_CMD run --rm openvpn ovpn_genconfig -u udp://${SERVER_IP_ADDRESS}:1194"
+
+    expect << EOF
+spawn sh -c "$DOCKER_COMPOSE_CMD run --rm openvpn ovpn_initpki"
+expect "Enter New CA Key Passphrase:"
+send "${OPENVPN_CA_PASS}\r"
+expect "Re-Enter New CA Key Passphrase:"
+send "${OPENVPN_CA_PASS}\r"
+expect "Common Name*"
+send "sshpanel-configured-openvpn-server\r"
+expect "Enter pass phrase*"
+send "${OPENVPN_CA_PASS}\r"
+expect "Verifying - Enter pass phrase*"
+send "${OPENVPN_CA_PASS}\r"
+expect eof
+EOF
+
+
+    echo "PKI Initialized. Configuring containers..."
+    sh -c "$DOCKER_COMPOSE_CMD up -d"
+
+    echo "✅ OpenVPN configured. Generating test user expire in 10 days...."
+
+    sleep 3
+
+    RANDOM_CLIENT_NAME=$(openssl rand -hex 5)
+
+    sh -c "(echo "password1"; echo "password1"; sleep 2; echo "$OPENVPN_CA_PASS") | $DOCKER_COMPOSE_CMD run --rm -iT -e EASYRSA_CERT_EXPIRE=10 openvpn easyrsa build-client-full ${RANDOM_CLIENT_NAME}"
+
+    echo "✅ Test user generated. Generating ovpn file..."
+    echo "  - Username: ${RANDOM_CLIENT_NAME}"
+    echo "  - Password: password1"
+    sleep 3
+
+    sh -c "$DOCKER_COMPOSE_CMD run --rm openvpn ovpn_getclient ${RANDOM_CLIENT_NAME} > ${RANDOM_CLIENT_NAME}.ovpn"
+
+    cat ${RANDOM_CLIENT_NAME}.ovpn
+
+    echo "✅ Test user config generated. Config at: ${RANDOM_CLIENT_NAME}.ovpn"
+    echo "Cleaning up..."
+
+
+    curl -4 -H "Content-Type: application/json" -X  GET $SSHPANEL_UPDATE -d '{"status": "CONFIGURING OPENVPN", "percentage": "60"}'
+
+    sleep 3
+
+    cd ..
+}
+
+function ConfigureWireguard() {
+    cd wireguard
+
+    curl -4 -H "Content-Type: application/json" -X  GET $SSHPANEL_UPDATE -d '{"status": "CONFIGURING WIREGUARD", "percentage": "80"}'
+
+    sh -c "$DOCKER_COMPOSE_CMD up -d"
+
+    echo "✅ WireGuard configured."
+
+    cd ..
+}
+
+
+Banner
+
+echo ""
+echo ""
+echo "Checking system compatibility..."
+CheckRootUser
+CheckDistroVersion
+InstallDependencies
+
+echo ""
+
+echo "Configuring OpenVPN..."
+
+ConfigureOpenvpn
+
+echo "Configuring WireGuard..."
+
+ConfigureWireguard
+
+echo "Done! Cleaning up..."
+
+sleep 5
+
+# Send completed
+curl -4 -H "Content-Type: application/json" -X  GET $SSHPANEL_UPDATE -d '{"status": "COMPLETED", "percentage": "100", "state": "SETUP_COMPLETED", "completed": true}'
+curl -4 -H "Content-Type: application/json" -X  GET $SSHPANEL_UPDATE -d '{"online": true}'
+
+Banner
+
+echo ""
+echo "=========================================================="
+echo "OpenVPN & WireGuard installed! This is the credentials :"
+echo ""
+echo "OPENVPN DETAILS :-"
+echo "PORT: 1194"
+echo "PROTOCOL: UDP"
+echo "CA PASSWORD: $OPENVPN_CA_PASS"
+echo ""
+echo "WIREGUARD DETAILS :-"
+echo "PORT: 51820"
+echo "PROTOCOL: UDP"
+echo ""
+echo "WG-ADMIN: http://${SERVER_IP_ADDRESS}:51821"
+echo "USERNAME: ${WG_USERNAME}"
+echo "PASSWORD: ${WG_PASSWORD}"
+echo ""
+echo ""
+echo "-----"
+echo "Powered by SSHPANEL"
+echo "Website: https://sshpanel.io"
+echo "Contact: contact@sshpanel.io"
+echo "-----"
+echo ""
+echo "=========================================================="
+
+
+
+
+

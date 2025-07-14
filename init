@@ -95,7 +95,7 @@ function ConfigureOpenvpn() {
 
     curl -4 -H "Content-Type: application/json" -X  GET $SSHPANEL_UPDATE -d '{"status": "CONFIGURING OPENVPN", "percentage": "50"}'
 
-    sh -c "$DOCKER_COMPOSE_CMD run --rm openvpn ovpn_genconfig -u udp://${SERVER_IP_ADDRESS}:1194"
+    sh -c "$DOCKER_COMPOSE_CMD run --rm -iT openvpn ovpn_genconfig -u udp://${SERVER_IP_ADDRESS}:1194"
 
     # Use script command to create pseudo-terminal for expect
     echo "Initializing OpenVPN PKI (this may take a few minutes)..."

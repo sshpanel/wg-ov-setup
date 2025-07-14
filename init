@@ -27,8 +27,6 @@ function Banner()
     echo "            |_______|    |_______||   __|_____|__|__| \_____/|___|  |__|____|"
     echo "               |_|                |__|                                       "
     echo ""
-    echo "Welcome to WireGuard & OpenVPN Setup by SSHPANEL."
-    echo "-----------------------------------------------------------------------------"
 }
 
 
@@ -190,6 +188,9 @@ function ConfigureWireguard() {
 
 Banner
 
+echo "Welcome to WireGuard & OpenVPN Setup by SSHPANEL."
+echo "-----------------------------------------------------------------------------"
+
 echo ""
 echo ""
 echo "Checking system compatibility..."
@@ -215,8 +216,13 @@ sleep 5
 curl -4 -H "Content-Type: application/json" -X  GET $SSHPANEL_UPDATE -d '{"status": "COMPLETED", "percentage": "100", "state": "SETUP_COMPLETED", "completed": true}'
 curl -4 -H "Content-Type: application/json" -X  GET $SSHPANEL_UPDATE -d '{"online": true}'
 
+clear
 Banner
 
+echo "Copyright (c) 2023-2025 SSHPANEL"
+echo "-----------------------------------------------------------------------------"
+
+echo ""
 echo ""
 echo "=========================================================="
 echo "OpenVPN & WireGuard installed! This is the credentials :"

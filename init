@@ -2,7 +2,7 @@
 
 ALLOWED_DISTROS="ubuntu"
 ALLOWED_VERSIONS="18.04 20.04 22.04 24.04"
-DEPS="openssl curl wireguard-tools sed expect screen"
+DEPS="openssl curl wireguard-tools sed expect"
 
 DOCKER_CMD="docker"
 
@@ -97,16 +97,10 @@ function ConfigureOpenvpn() {
 
     sh -c "$DOCKER_COMPOSE_CMD run --rm openvpn ovpn_genconfig -u udp://${SERVER_IP_ADDRESS}:1194"
 
-    # Run expect inside a screen session to provide proper TTY (synchronous)
+    # Use script command to create pseudo-terminal for expect
     echo "Initializing OpenVPN PKI (this may take a few minutes)..."
     
-    # Create status files for synchronization
-    rm -f /tmp/openvpn_start /tmp/openvpn_complete
-    
-    screen -S openvpn_setup bash -c "
-        # Signal that we've started
-        touch /tmp/openvpn_start
-        
+    script -qec "
         expect << 'EXPECTEOF'
 set timeout 60
 spawn $DOCKER_COMPOSE_CMD run --rm openvpn ovpn_initpki
@@ -122,29 +116,7 @@ expect \"Verifying - Enter pass phrase*\"
 send \"$OPENVPN_CA_PASS\r\"
 expect eof
 EXPECTEOF
-        
-        # Signal completion
-        touch /tmp/openvpn_complete
-        exit 0
-    " &
-    
-    # Wait for screen session to start
-    while [ ! -f /tmp/openvpn_start ]; do
-        echo -n "."
-        sleep 0.5
-    done
-    
-    # Wait for screen session to complete
-    echo "Waiting for PKI initialization to complete..."
-    while [ ! -f /tmp/openvpn_complete ]; do
-        sleep 2
-        echo -n "."
-    done
-    echo ""
-    
-    # Cleanup
-    screen -X -S openvpn_setup quit 2>/dev/null || true
-    rm -f /tmp/openvpn_start /tmp/openvpn_complete
+    " /dev/null
     
     echo "✅ PKI initialization completed successfully"
 

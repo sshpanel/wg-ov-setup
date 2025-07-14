@@ -99,24 +99,47 @@ function ConfigureOpenvpn() {
 
     # Use script command to create pseudo-terminal for expect
     echo "Initializing OpenVPN PKI (this may take a few minutes)..."
-    
-    script -qec "
-        expect << 'EXPECTEOF'
+
+    # Store the expect script in a variable for cleaner syntax
+EXPECT_SCRIPT=$(cat << EXPECTEOF
 set timeout 60
 spawn $DOCKER_COMPOSE_CMD run --rm openvpn ovpn_initpki
-expect \"Enter New CA Key Passphrase:\"
-send \"$OPENVPN_CA_PASS\r\"
-expect \"Re-Enter New CA Key Passphrase:\"
-send \"$OPENVPN_CA_PASS\r\"
-expect \"Common Name*\"
-send \"sshpanel-configured-openvpn-server\r\"
-expect \"Enter pass phrase*\"
-send \"$OPENVPN_CA_PASS\r\"
-expect \"Verifying - Enter pass phrase*\"
-send \"$OPENVPN_CA_PASS\r\"
-expect eof
+
+expect {
+    "Enter New CA Key Passphrase:" { 
+        send "$OPENVPN_CA_PASS\r"
+        exp_continue
+    }
+    "Re-Enter New CA Key Passphrase:" { 
+        send "$OPENVPN_CA_PASS\r"
+        exp_continue
+    }
+    -re "Common Name.*:" { 
+        send "sshpanel-configured-openvpn-server\r"
+        exp_continue
+    }
+    -re "Enter pass phrase.*:" { 
+        send "$OPENVPN_CA_PASS\r"
+        exp_continue
+    }
+    -re "Verifying.*Enter pass phrase.*:" { 
+        send "$OPENVPN_CA_PASS\r"
+        exp_continue
+    }
+    timeout { 
+        puts "Timeout occurred"
+        exit 1
+    }
+    eof { 
+        puts "Process completed successfully"
+    }
+}
 EXPECTEOF
-    " /dev/null
+)
+
+    # Run with script for TTY
+    script -qec "expect -c '$EXPECT_SCRIPT'" /dev/null
+    
     
     echo "✅ PKI initialization completed successfully"
 

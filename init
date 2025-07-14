@@ -2,7 +2,7 @@
 
 ALLOWED_DISTROS="ubuntu"
 ALLOWED_VERSIONS="18.04 20.04 22.04 24.04"
-DEPS="openssl curl wireguard-tools sed expect"
+DEPS="openssl curl wireguard-tools sed expect screen"
 
 DOCKER_CMD="docker"
 
@@ -97,20 +97,56 @@ function ConfigureOpenvpn() {
 
     sh -c "$DOCKER_COMPOSE_CMD run --rm openvpn ovpn_genconfig -u udp://${SERVER_IP_ADDRESS}:1194"
 
-    expect << EOF
-spawn sh -c "$DOCKER_COMPOSE_CMD run --rm -i openvpn ovpn_initpki"
-expect "Enter New CA Key Passphrase:"
-send "${OPENVPN_CA_PASS}\r"
-expect "Re-Enter New CA Key Passphrase:"
-send "${OPENVPN_CA_PASS}\r"
-expect "Common Name*"
-send "sshpanel-configured-openvpn-server\r"
-expect "Enter pass phrase*"
-send "${OPENVPN_CA_PASS}\r"
-expect "Verifying - Enter pass phrase*"
-send "${OPENVPN_CA_PASS}\r"
+    # Run expect inside a screen session to provide proper TTY (synchronous)
+    echo "Initializing OpenVPN PKI (this may take a few minutes)..."
+    
+    # Create status files for synchronization
+    rm -f /tmp/openvpn_start /tmp/openvpn_complete
+    
+    screen -S openvpn_setup bash -c "
+        # Signal that we've started
+        touch /tmp/openvpn_start
+        
+        expect << 'EXPECTEOF'
+set timeout 60
+spawn $DOCKER_COMPOSE_CMD run --rm openvpn ovpn_initpki
+expect \"Enter New CA Key Passphrase:\"
+send \"$OPENVPN_CA_PASS\r\"
+expect \"Re-Enter New CA Key Passphrase:\"
+send \"$OPENVPN_CA_PASS\r\"
+expect \"Common Name*\"
+send \"sshpanel-configured-openvpn-server\r\"
+expect \"Enter pass phrase*\"
+send \"$OPENVPN_CA_PASS\r\"
+expect \"Verifying - Enter pass phrase*\"
+send \"$OPENVPN_CA_PASS\r\"
 expect eof
-EOF
+EXPECTEOF
+        
+        # Signal completion
+        touch /tmp/openvpn_complete
+        exit 0
+    " &
+    
+    # Wait for screen session to start
+    while [ ! -f /tmp/openvpn_start ]; do
+        echo -n "."
+        sleep 0.5
+    done
+    
+    # Wait for screen session to complete
+    echo "Waiting for PKI initialization to complete..."
+    while [ ! -f /tmp/openvpn_complete ]; do
+        sleep 2
+        echo -n "."
+    done
+    echo ""
+    
+    # Cleanup
+    screen -X -S openvpn_setup quit 2>/dev/null || true
+    rm -f /tmp/openvpn_start /tmp/openvpn_complete
+    
+    echo "✅ PKI initialization completed successfully"
 
 
     echo "PKI Initialized. Configuring containers..."

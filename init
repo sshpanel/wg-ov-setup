@@ -6,11 +6,6 @@ DEPS="openssl curl wireguard-tools sed expect docker-compose"
 
 DOCKER_CMD="docker"
 
-if command -v docker-compose > /dev/null 2>&1; then
-    DOCKER_COMPOSE_CMD="docker-compose"
-else
-    DOCKER_COMPOSE_CMD="docker compose"
-fi
 
 
 function Banner()
@@ -198,6 +193,13 @@ echo "Checking system compatibility..."
 CheckRootUser
 CheckDistroVersion
 InstallDependencies
+
+
+if command -v docker-compose > /dev/null 2>&1; then
+    DOCKER_COMPOSE_CMD="docker-compose"
+else
+    DOCKER_COMPOSE_CMD="docker compose"
+fi
 
 echo ""
 

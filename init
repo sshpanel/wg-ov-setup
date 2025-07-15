@@ -2,7 +2,7 @@
 
 ALLOWED_DISTROS="ubuntu"
 ALLOWED_VERSIONS="18.04 20.04 22.04 24.04"
-DEPS="openssl curl wireguard-tools sed expect"
+DEPS="openssl curl wireguard-tools sed expect docker-compose"
 
 DOCKER_CMD="docker"
 

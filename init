@@ -2,7 +2,7 @@
 
 ALLOWED_DISTROS="ubuntu"
 ALLOWED_VERSIONS="18.04 20.04 22.04 24.04"
-DEPS="openssl curl wireguard-tools sed expect docker-compose"
+DEPS="openssl curl wireguard-tools sed expect"
 
 DOCKER_CMD="docker"
 
@@ -199,9 +199,10 @@ echo "Checking system compatibility..."
 CheckRootUser
 CheckDistroVersion
 InstallDependencies
+CheckAndInstallDocker
 
-
-if command -v docker-compose > /dev/null 2>&1; then
+if ! docker compose version > /dev/null 2>&1; then
+    apt-get install -y docker-compose
     DOCKER_COMPOSE_CMD="docker-compose"
 else
     DOCKER_COMPOSE_CMD="docker compose"

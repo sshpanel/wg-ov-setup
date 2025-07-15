@@ -82,6 +82,7 @@ function CheckAndInstallDocker() {
     if ! command -v $DOCKER_CMD &> /dev/null; then
         echo "Installing Docker..."
         curl -sSL https://get.docker.com | sh
+        sudo apt-get install -y docker-compose
     fi
 
     echo "✅ Docker installed"
